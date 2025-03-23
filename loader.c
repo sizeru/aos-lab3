@@ -20,11 +20,11 @@ bool bufdiff(const void* buf1, const void* buf2, int len);
 void print_elf_header(elf_hdr* header);
 void print_usage(const char* program);
 void print_phdr(elf_phdr* phdr);
-void print_shdr(elf_shdr* shdr);
+void print_shdr(elf_shdr* shdr, elf_hdr* ehdr, int fd);
 bool parse_elf_header(int fd, elf_header_t* header);
 void stack_check(void* top_of_stack, uint64_t argc, char** argv);
 
-void print_shdr(elf_shdr* shdr) {
+void print_shdr(elf_shdr* shdr, elf_hdr* ehdr, int fd) {
 	char* sh_type;
 	switch(shdr->sh_type) {
 	case SHT_NULL:           sh_type = "SHT_NULL"; break;
@@ -84,7 +84,34 @@ void print_shdr(elf_shdr* shdr) {
 
 	if (shdr->sh_type != SHT_NULL) {
 		printf("Elf section header: \n");
-		printf("name: (0x%x)\n", shdr->sh_name);
+		printf("name: 0x%x", shdr->sh_name);
+		if (shdr->sh_name != 0) {
+			static bool init = false;
+			static char* sh_strtab_data;
+			if (!init) {
+				static elf_shdr sh_strtab;
+				// Read header
+				int sh_str_tab_offset = ehdr->e_shoff + (ehdr->e_shstrndx * ehdr->e_shentsize);
+				if (-1 == lseek(fd, sh_str_tab_offset, SEEK_SET)) {
+					err(EXIT_FAILURE, "Couldn't seek to this point in the file");
+				}
+				if (sizeof(elf_shdr) != read(fd, &sh_strtab, sizeof(elf_shdr))) {
+					err(EXIT_FAILURE, "Couldn't read %lu B from 0x%x (for strtab section header)", sizeof(elf_shdr), sh_str_tab_offset);
+				}
+				// Read data
+				sh_strtab_data = malloc(sh_strtab.sh_size);
+				if (-1 == lseek(fd, sh_strtab.sh_offset, SEEK_SET)) {
+					err(EXIT_FAILURE, "Couldn't seek to this point in the file");
+				}
+				if (sh_strtab.sh_size != read(fd, sh_strtab_data, sh_strtab.sh_size)) {
+					err(EXIT_FAILURE, "Couldn't read %lu B from 0x%x (for strtab section data)", sh_strtab.sh_size, sh_str_tab_offset);
+				}
+				init = true;
+			}
+			// Attempts to read from the section string table. Located at the end of all sections
+			printf(" (%s)", sh_strtab_data + shdr->sh_name);
+		}
+		printf("\n");
 		printf("type: %s (0x%x)\n", sh_type, shdr->sh_type);
 		printf("flags: %s (0x%lx)\n", sflags, shdr->sh_flags);
 		printf("addr: 0x%lx\n", shdr->sh_addr);
@@ -292,17 +319,17 @@ int main(int argc, char* argv[]) {
 	if (-1 == lseek(progfd, header.e_phoff, SEEK_SET)) {
 		err(EXIT_FAILURE, NULL);
 	}
-	if (-1 == read(progfd, program_headers, phdr_len)) {
+	if (phdr_len != read(progfd, program_headers, phdr_len)) {
 		err(EXIT_FAILURE, "Couldn't read all program headers");
 	}
 
 	// Read section headers
-	int shdr_len = header.e_phentsize * header.e_phnum;
+	int shdr_len = header.e_shentsize * header.e_shnum;
 	elf_shdr* section_headers = malloc(shdr_len);
 	if (-1 == lseek(progfd, header.e_shoff, SEEK_SET)) {
 		err(EXIT_FAILURE, NULL);
 	}
-	if (-1 == read(progfd, section_headers, shdr_len)) {
+	if (shdr_len != read(progfd, section_headers, shdr_len)) {
 		err(EXIT_FAILURE, "Couldn't read all section headers");
 	}
 
@@ -322,7 +349,7 @@ int main(int argc, char* argv[]) {
 		}
 		#ifndef NDEBUG
 		printf("[%i] ", i);
-		print_shdr(shdr);
+		print_shdr(shdr, &header, progfd);
 		#endif
 	}
 
