@@ -19,7 +19,6 @@ apager: loader.c
 
 sum: sum.c
 	$(CC) $< $(CFLAGS) -T elf_x86_64.x -o $@
-	strip $@
 
 clean:
 	$(RM) sum apager

@@ -19,8 +19,132 @@ typedef Elf64_Shdr elf_section_header_t, elf_shdr;
 bool bufdiff(const void* buf1, const void* buf2, int len);
 void print_elf_header(elf_hdr* header);
 void print_usage(const char* program);
+void print_phdr(elf_phdr* phdr);
+void print_shdr(elf_shdr* shdr);
 bool parse_elf_header(int fd, elf_header_t* header);
 void stack_check(void* top_of_stack, uint64_t argc, char** argv);
+
+void print_shdr(elf_shdr* shdr) {
+	char* sh_type;
+	switch(shdr->sh_type) {
+	case SHT_NULL:           sh_type = "SHT_NULL"; break;
+	case SHT_PROGBITS:       sh_type = "SHT_PROGBITS"; break;
+	case SHT_SYMTAB:         sh_type = "SHT_SYMTAB"; break;
+	case SHT_STRTAB:         sh_type = "SHT_STRTAB"; break;
+	case SHT_RELA:           sh_type = "SHT_RELA"; break;
+	case SHT_HASH:           sh_type = "SHT_HASH"; break;
+	case SHT_DYNAMIC:        sh_type = "SHT_DYNAMIC"; break;
+	case SHT_NOTE:           sh_type = "SHT_NOTE"; break;
+	case SHT_NOBITS:         sh_type = "SHT_NOBITS"; break;
+	case SHT_REL:            sh_type = "SHT_REL"; break;
+	case SHT_SHLIB:          sh_type = "SHT_SHLIB"; break;
+	case SHT_DYNSYM:         sh_type = "SHT_DYNSYM"; break;
+	case SHT_INIT_ARRAY:     sh_type = "SHT_INIT_ARRAY"; break;
+	case SHT_FINI_ARRAY:     sh_type = "SHT_FINI_ARRAY"; break;
+	case SHT_PREINIT_ARRAY:  sh_type = "SHT_PREINIT_ARRAY"; break;
+	case SHT_GROUP:          sh_type = "SHT_GROUP"; break;
+	case SHT_SYMTAB_SHNDX:   sh_type = "SHT_SYMTAB_SHNDX"; break;
+	case SHT_RELR:           sh_type = "SHT_RELR"; break;
+	case SHT_NUM:            sh_type = "SHT_NUM"; break;
+	case SHT_LOOS:           sh_type = "SHT_LOOS"; break;
+	case SHT_GNU_ATTRIBUTES: sh_type = "SHT_GNU_ATTRIBUTES"; break;
+	case SHT_GNU_HASH:       sh_type = "SHT_GNU_HASH"; break;
+	case SHT_GNU_LIBLIST:    sh_type = "SHT_GNU_LIBLIST"; break;
+	case SHT_CHECKSUM:       sh_type = "SHT_CHECKSUM"; break;
+	case SHT_LOSUNW:         sh_type = "SHT_LOSUNW"; break;
+	case SHT_SUNW_COMDAT:    sh_type = "SHT_SUNW_COMDAT"; break;
+	case SHT_SUNW_syminfo:   sh_type = "SHT_SUNW_syminfo"; break;
+	case SHT_GNU_verdef:     sh_type = "SHT_GNU_verdef"; break;
+	case SHT_GNU_verneed:    sh_type = "SHT_GNU_verneed"; break;
+	case SHT_GNU_versym:     sh_type = "SHT_GNU_versym"; break;
+	case SHT_LOPROC:         sh_type = "SHT_LOPROC"; break;
+	case SHT_HIPROC:         sh_type = "SHT_HIPROC"; break;
+	case SHT_LOUSER:         sh_type = "SHT_LOUSER"; break;
+	case SHT_HIUSER:         sh_type = "SHT_HIUSER"; break;
+	default: asprintf(&sh_type, "0x%x", shdr->sh_type); break;
+	}
+
+	char sflags[17] = {0};
+	sflags[ 0] = shdr->sh_flags & SHF_WRITE             ? 'W' : ' ';
+	sflags[ 1] = shdr->sh_flags & SHF_ALLOC             ? 'A' : ' ';
+	sflags[ 2] = shdr->sh_flags & SHF_EXECINSTR         ? 'X' : ' ';
+	sflags[ 3] = shdr->sh_flags & SHF_MERGE             ? 'M' : ' ';
+	sflags[ 4] = shdr->sh_flags & SHF_STRINGS           ? 'S' : ' ';
+	sflags[ 5] = shdr->sh_flags & SHF_INFO_LINK         ? 'I' : ' ';
+	sflags[ 6] = shdr->sh_flags & SHF_LINK_ORDER        ? 'O' : ' ';
+	sflags[ 7] = shdr->sh_flags & SHF_OS_NONCONFORMING  ? 'N' : ' ';
+	sflags[ 8] = shdr->sh_flags & SHF_GROUP             ? 'G' : ' ';
+	sflags[ 9] = shdr->sh_flags & SHF_TLS               ? 'T' : ' ';
+	sflags[10] = shdr->sh_flags & SHF_COMPRESSED        ? 'C' : ' ';
+	sflags[11] = shdr->sh_flags & SHF_MASKOS            ? 'm' : ' ';
+	sflags[12] = shdr->sh_flags & SHF_MASKPROC          ? 'p' : ' ';
+	sflags[13] = shdr->sh_flags & SHF_GNU_RETAIN        ? 'r' : ' ';
+	sflags[14] = shdr->sh_flags & SHF_ORDERED           ? 'o' : ' ';
+	sflags[15] = shdr->sh_flags & SHF_EXCLUDE           ? 'e' : ' ';
+
+	if (shdr->sh_type != SHT_NULL) {
+		printf("Elf section header: \n");
+		printf("name: (0x%x)\n", shdr->sh_name);
+		printf("type: %s (0x%x)\n", sh_type, shdr->sh_type);
+		printf("flags: %s (0x%lx)\n", sflags, shdr->sh_flags);
+		printf("addr: 0x%lx\n", shdr->sh_addr);
+		printf("offset: 0x%lx\n", shdr->sh_offset);
+		printf("size: 0x%lx\n", shdr->sh_size);
+		printf("link: 0x%x\n", shdr->sh_link);
+		printf("info: 0x%x\n", shdr->sh_info);
+		printf("addralign: %lu\n", shdr->sh_addralign);
+		printf("entsize: %lu\n", shdr->sh_entsize); // symbol tables?
+	} else {
+		printf("Elf section header is NULL");
+	}
+	printf("\n");
+}
+
+void print_phdr(elf_phdr* phdr) {
+	char* ptype;
+	switch (phdr->p_type) {
+	case PT_NULL: ptype = "PT_NULL"; break;
+	case PT_LOAD: ptype = "PT_LOAD"; break;
+	case PT_DYNAMIC: ptype = "PT_DYNAMIC"; break;
+	case PT_INTERP: ptype = "PT_INTERP"; break;
+
+	case PT_NOTE: ptype = "PT_NOTE"; break;
+	case PT_SHLIB: ptype = "PT_SHLIB"; break;
+	case PT_PHDR: ptype = "PT_PHDR"; break;
+	case PT_TLS: ptype = "PT_TLS"; break;
+	case PT_NUM: ptype = "PT_NUM"; break;
+	case PT_LOOS: ptype = "PT_LOOS"; break;
+	case PT_GNU_EH_FRAME: ptype = "PT_GNU_EH_FRAME"; break;
+	case PT_GNU_STACK: ptype = "PT_GNU_STACK"; break;
+	case PT_GNU_RELRO: ptype = "PT_GNU_RELRO"; break;
+	case PT_GNU_PROPERTY: ptype = "PT_GNU_PROPERTY"; break;
+	case PT_GNU_SFRAME: ptype = "PT_GNU_SFRAME"; break;
+	case PT_LOSUNW: ptype = "PT_LOSUNW"; break;
+	case PT_SUNWSTACK: ptype = "PT_SUNWSTACK"; break;
+	case PT_HIOS: ptype = "PT_HIOS"; break;
+	case PT_LOPROC: ptype = "PT_LOPROC"; break;
+	case PT_HIPROC: ptype = "PT_HIPROC"; break;
+	default: asprintf(&ptype, "0x%x", phdr->p_type); break;
+	}
+
+	char pflags[4] = {0};
+	pflags[0] = phdr->p_flags & PF_R ? 'R' : ' ';
+	pflags[1] = phdr->p_flags & PF_W ? 'W' : ' ';
+	pflags[2] = phdr->p_flags & PF_X ? 'X' : ' ';
+
+	printf("Elf Program header: \n");
+	printf("Type: %s (0x%x)\n", ptype, phdr->p_type);
+	if (phdr->p_type != PT_NULL) {
+		printf("Flags: %s (0x%x)\n", pflags, phdr->p_flags);
+		printf("Offset: %lx\n", phdr->p_offset);
+		printf("Vaddr: %lx\n", phdr->p_vaddr);
+		printf("Paddr: %lx\n", phdr->p_paddr);
+		printf("Filesize: %lu B\n", phdr->p_filesz);
+		printf("Memsize: %lu B\n", phdr->p_memsz);
+		printf("Alignment: %lu\n", phdr->p_align);
+	}
+	printf("\n");
+}
 
 void print_elf_header(elf_hdr* header) {
     printf("ELF Header:\n");
@@ -155,18 +279,20 @@ int main(int argc, char* argv[]) {
 	if (!parse_elf_header(progfd, &header)) {
 		err(EXIT_FAILURE, "Elf header not valid");
 	}
+	#ifndef NDEBUG
 	print_elf_header(&header);
+	#endif
 
 	// Read program headers
 	if(header.e_phnum == PN_XNUM) {
 		err(EXIT_FAILURE, "Maxed out program headers. Not supporetd by this loader");
 	}
 	int phdr_len = header.e_phentsize * header.e_phnum;
-	elf_phdr* prog_headers = malloc(phdr_len);
+	elf_phdr* program_headers = malloc(phdr_len);
 	if (-1 == lseek(progfd, header.e_phoff, SEEK_SET)) {
 		err(EXIT_FAILURE, NULL);
 	}
-	if (-1 == read(progfd, prog_headers, phdr_len)) {
+	if (-1 == read(progfd, program_headers, phdr_len)) {
 		err(EXIT_FAILURE, "Couldn't read all program headers");
 	}
 
@@ -180,6 +306,25 @@ int main(int argc, char* argv[]) {
 		err(EXIT_FAILURE, "Couldn't read all section headers");
 	}
 
+	// load everything correctly
+	elf_phdr* phdr = program_headers;
+	for (int i = 0; i < header.e_phnum; i++, phdr++) {
+		#ifndef NDEBUG
+		printf("[%i] ", i);
+		print_phdr(phdr);
+		#endif
+	}
+
+	elf_shdr* shdr = section_headers;
+	for (int i = 0; i < header.e_shnum; i++, shdr++) {
+		if (i == SHN_UNDEF || (i > SHN_LORESERVE && i < SHN_HIRESERVE) || (i > SHN_LOPROC && i < SHN_HIPROC) || i == SHN_ABS || i == SHN_COMMON) {
+			continue;
+		}
+		#ifndef NDEBUG
+		printf("[%i] ", i);
+		print_shdr(shdr);
+		#endif
+	}
 
 	return 0;
 }
