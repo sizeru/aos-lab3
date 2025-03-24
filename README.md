@@ -12,3 +12,5 @@ Program headers are at the page granularity and are for protection. Section head
 Program headers create the address space and section headers memory map things into the right place.
 
 A section is a contiguous region of a file.
+
+It seems to me that the program headers are mainly for protection, while sections indicate where the parts of an executable live.

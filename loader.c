@@ -8,9 +8,12 @@
 #include <stdio.h> /* printf */
 #include <stdint.h> /* uint... */
 #include <string.h> /* strcmp */
+#include <sys/mman.h> /* mmap */
 #include <unistd.h> /* read */
 
 #define PAGESIZE 0x1000
+#define PAGECEIL(num) (((num) + (PAGESIZE - 1)) & ~(PAGESIZE - 1))
+#define PAGEFLOOR(num) ((num) & ~(PAGESIZE - 1))
 
 typedef Elf64_Ehdr elf_header_t, elf_hdr;
 typedef Elf64_Phdr elf_program_header_t, elf_phdr;
@@ -163,11 +166,11 @@ void print_phdr(elf_phdr* phdr) {
 	printf("Type: %s (0x%x)\n", ptype, phdr->p_type);
 	if (phdr->p_type != PT_NULL) {
 		printf("Flags: %s (0x%x)\n", pflags, phdr->p_flags);
-		printf("Offset: %lx\n", phdr->p_offset);
-		printf("Vaddr: %lx\n", phdr->p_vaddr);
-		printf("Paddr: %lx\n", phdr->p_paddr);
-		printf("Filesize: %lu B\n", phdr->p_filesz);
-		printf("Memsize: %lu B\n", phdr->p_memsz);
+		printf("Offset: 0x%lx\n", phdr->p_offset);
+		printf("Vaddr: 0x%lx\n", phdr->p_vaddr);
+		printf("Paddr: 0x%lx\n", phdr->p_paddr);
+		printf("Filesize: 0x%lx B\n", phdr->p_filesz);
+		printf("Memsize: 0x%lx B\n", phdr->p_memsz);
 		printf("Alignment: %lu\n", phdr->p_align);
 	}
 	printf("\n");
@@ -333,13 +336,37 @@ int main(int argc, char* argv[]) {
 		err(EXIT_FAILURE, "Couldn't read all section headers");
 	}
 
-	// load everything correctly
+	// Memory map program headers into their right place
 	elf_phdr* phdr = program_headers;
 	for (int i = 0; i < header.e_phnum; i++, phdr++) {
 		#ifndef NDEBUG
 		printf("[%i] ", i);
 		print_phdr(phdr);
 		#endif
+		if (phdr->p_type == PT_LOAD) {
+			int prot = 0;
+			prot |= phdr->p_flags & PF_X ? PROT_EXEC : 0;
+			prot |= phdr->p_flags & PF_R ? PROT_READ : 0;
+			prot |= phdr->p_flags & PF_W ? PROT_WRITE : 0;
+			uint64_t base_page_offset = phdr->p_vaddr % PAGESIZE;
+			void* base_page_addr = (void*)(phdr->p_vaddr - base_page_offset);
+			uint64_t mmap_size = PAGECEIL(phdr->p_memsz + base_page_offset);
+			int flags = MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS;
+			#ifndef NDEBUG
+			printf("Called mmap(%p, 0x%lx, 0x%x, 0x%x, %i, 0x%lx)\n", base_page_addr, mmap_size, prot, MAP_FIXED | MAP_PRIVATE, progfd, PAGEFLOOR(phdr->p_offset));
+			#endif
+			void* pa = mmap(base_page_addr, mmap_size, PROT_WRITE, flags, progfd, PAGEFLOOR(phdr->p_offset));
+			if (pa == MAP_FAILED) {
+				err(EXIT_FAILURE, "Failed map: %i", errno);
+			}
+			// zero out the beginning offset and end offset
+			explicit_bzero(pa, base_page_offset);
+			explicit_bzero(pa + base_page_offset + phdr->p_filesz, mmap_size - phdr->p_filesz - base_page_offset);
+			// fix perms
+			if (-1 == mprotect(pa, mmap_size, prot)) {
+				err(EXIT_FAILURE, "Failed setting protection: %i", errno);
+			}
+		}
 	}
 
 	elf_shdr* shdr = section_headers;
