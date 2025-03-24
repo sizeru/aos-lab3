@@ -8,6 +8,7 @@
 #include <stdio.h> /* printf */
 #include <stdint.h> /* uint... */
 #include <string.h> /* strcmp */
+#include <sys/cdefs.h>
 #include <sys/mman.h> /* mmap */
 #include <unistd.h> /* read */
 
@@ -19,6 +20,7 @@ typedef Elf64_Ehdr elf_header_t, elf_hdr;
 typedef Elf64_Phdr elf_program_header_t, elf_phdr;
 typedef Elf64_Shdr elf_section_header_t, elf_shdr;
 
+void grow_and_refurbish_stack(const void* initial_sp);
 bool bufdiff(const void* buf1, const void* buf2, int len);
 void print_elf_header(elf_hdr* header);
 void print_usage(const char* program);
@@ -26,6 +28,60 @@ void print_phdr(elf_phdr* phdr);
 void print_shdr(elf_shdr* shdr, elf_hdr* ehdr, int fd);
 bool parse_elf_header(int fd, elf_header_t* header);
 void stack_check(void* top_of_stack, uint64_t argc, char** argv);
+void zero_regs();
+
+// Grow the stack and 'refurbish' it so that it appears like a fresh new stack
+// ready for a new main function. Format of stack taken from:
+// https://web.archive.org/web/20220126113327/http://www.mindfruit.co.uk/2012/01/initial-stack-reading-process-arguments.html
+__always_inline void grow_and_refurbish_stack(const void* initial_sp) {
+	// The initial stack pointer will also be argc.
+	int argc = *(int*)(initial_sp) - 1; // decrement to prep for new prog
+	char** argv_1 = ((char**)initial_sp + 2); //
+	char** ptr_env = ((char**)initial_sp + argc + 3);
+	// Iterate until we get to the end of the auxiliary vectors
+	// Help from: https://articles.manugarg.com/aboutelfauxiliaryvectors
+	while (*ptr_env != NULL)  ptr_env++;
+	// envvars are referenced via pointer and do not need to be copied
+	Elf64_auxv_t* auxv = (Elf64_auxv_t*)(ptr_env+1);
+	while (auxv->a_type != AT_NULL) auxv++;
+	void* copy_top = auxv + 1;
+	void* copy_bottom = argv_1;
+	uint64_t space_required = (copy_top - copy_bottom) + 8;
+	uint64_t sp;
+
+    // We now have everything we need. Create space on the stack
+	__asm__ (
+		"sub %1, %%rsp; "
+		"mov %%rsp, %0; "
+		: "=r" (sp)
+		: "r" (space_required)
+	);
+
+	// Copy data over
+	memcpy((void*)(sp + 8), argv_1, space_required - 8);
+	*(uint64_t*)sp = (uint64_t)argc;
+}
+
+// Zero out all regs
+__always_inline void zero_regs() {
+	asm (
+		// GPRs
+	    "xor %rax, %rax; "
+	    "xor %rbx, %rbx; "
+	    "xor %rcx, %rcx; "
+	    "xor %rdx, %rdx; "
+	    "xor %rsi, %rsi; "
+	    "xor %rdi, %rdi; "
+	    "xor %r8, %r8; "
+	    "xor %r9, %r9; "
+	    "xor %r10, %r10; "
+	    "xor %r11, %r11; "
+	    "xor %r12, %r12; "
+	    "xor %r13, %r13; "
+	    "xor %r14, %r14; "
+	    "xor %r15, %r15; "
+	);
+}
 
 void print_shdr(elf_shdr* shdr, elf_hdr* ehdr, int fd) {
 	char* sh_type;
@@ -369,6 +425,7 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
+	void* main_location = NULL;
 	elf_shdr* shdr = section_headers;
 	for (int i = 0; i < header.e_shnum; i++, shdr++) {
 		if (i == SHN_UNDEF || (i > SHN_LORESERVE && i < SHN_HIRESERVE) || (i > SHN_LOPROC && i < SHN_HIPROC) || i == SHN_ABS || i == SHN_COMMON) {
@@ -378,15 +435,50 @@ int main(int argc, char* argv[]) {
 		printf("[%i] ", i);
 		print_shdr(shdr, &header, progfd);
 		#endif
+		// Retrieve the location of main
+		if (shdr->sh_type == SHT_SYMTAB) {
+			Elf64_Sym* symbols = malloc(shdr->sh_size);
+			void* og_symbols = symbols;
+			if (-1 == lseek(progfd, shdr->sh_offset, SEEK_SET)) {
+				err(EXIT_FAILURE, "Couldn't seek when searching for main symbol");
+			}
+			if (shdr->sh_size != read(progfd, symbols, shdr->sh_size)) {
+				err(EXIT_FAILURE, "Couldn't read when searching for main symbol");
+			}
+			const uint64_t symbol_names_offset = section_headers[shdr->sh_link].sh_offset;
+			char symbol_buf[6] = {0}; // can be small. i only care about main
+			bool found = false;
+			for (int i = 0; i < shdr->sh_size / sizeof(Elf64_Sym); i++, symbols++) {
+				uint64_t loc = symbol_names_offset + symbols->st_name;
+				if (-1 == lseek(progfd, loc, SEEK_SET)) {
+					err(EXIT_FAILURE, "Couldn't seek when searching for main symbol");
+				}
+				if (0 >= read(progfd, symbol_buf, 6)) {
+					err(EXIT_FAILURE, "Couldn't read when searching for main symbol");
+				}
+				printf("Symbol: %s\n", symbol_buf);
+				if (strcmp(symbol_buf, "main") == 0) {
+					main_location = (void*)symbols->st_value;
+					break;
+				}
+			}
+			free(og_symbols);
+		}
 	}
+	assert(main_location);
 
 	if (-1 == close(progfd)) {
 		err(EXIT_FAILURE, "Problems closing??");
 	}
 
-	// We did it!
-	uint64_t entry = header.e_entry;
-	asm ("jmp *%0" : /* output regs */ : "r" (entry));
+	// We do not want to jump to the entry point - since this is the start
+	// function which does libc initialization, resets the stack pointer, etc.
+	// We don't want to mangle setup we've already done, so we must set up the
+	// stack ourselves
+
+	grow_and_refurbish_stack(argv - 1);
+	zero_regs();
+	asm ("jmp *%0" : /* output regs */ : "r" (main_location));
 
 	return 0xBABE; // Babe you really shouldn't be returning
 }

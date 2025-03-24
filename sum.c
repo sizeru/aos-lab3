@@ -1,9 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 int main(int argc, char* argv[]) {
-	int a = atoi(argv[1]);
-	int b = atoi(argv[2]);
+	// int a = atoi(argv[1]);
+	// int b = atoi(argv[2]);
+	int a = 4, b = 5;
 	int x = a + b;
-	printf("%d + %d = %d\n", a, b, x);
+	//printf("%d + %d = %d\n", a, b, x);
 	return x;
+	// return 0;
 }

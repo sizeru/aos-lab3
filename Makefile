@@ -18,7 +18,7 @@ apager: loader.c
 # 	$(LD) $< $(LDFLAGS) -o $@
 
 sum: sum.c
-	$(CC) $< $(CFLAGS) -T elf_x86_64.x -o $@
+	$(CC) $< $(CFLAGS) -T elf_x86_64.x -e main -o $@
 
 clean:
 	$(RM) sum apager
