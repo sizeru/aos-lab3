@@ -190,7 +190,7 @@ void print_elf_header(elf_hdr* header) {
     printf("Type \t\t\t\t\t%d\n", header->e_type);
     printf("Machine: \t\t\t\t%d\n", header->e_machine);
     printf("Version: \t\t\t\t0x%x\n", header->e_version);
-    printf("Entry point address: \t\t\t0x%lu\n", header->e_entry);
+    printf("Entry point address: \t\t\t0x%lx\n", header->e_entry);
     printf("Start of program headers: \t\t0x%lx (bytes into file)\n", header->e_phoff);
     printf("Start of section headers: \t\t0x%lx (bytes into file)\n", header->e_shoff);
     printf("Flags: \t\t\t\t\t0x%x\n", header->e_flags);
@@ -351,7 +351,7 @@ int main(int argc, char* argv[]) {
 			uint64_t base_page_offset = phdr->p_vaddr % PAGESIZE;
 			void* base_page_addr = (void*)(phdr->p_vaddr - base_page_offset);
 			uint64_t mmap_size = PAGECEIL(phdr->p_memsz + base_page_offset);
-			int flags = MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS;
+			int flags = MAP_FIXED | MAP_PRIVATE;
 			#ifndef NDEBUG
 			printf("Called mmap(%p, 0x%lx, 0x%x, 0x%x, %i, 0x%lx)\n", base_page_addr, mmap_size, prot, MAP_FIXED | MAP_PRIVATE, progfd, PAGEFLOOR(phdr->p_offset));
 			#endif
@@ -361,7 +361,7 @@ int main(int argc, char* argv[]) {
 			}
 			// zero out the beginning offset and end offset
 			explicit_bzero(pa, base_page_offset);
-			explicit_bzero(pa + base_page_offset + phdr->p_filesz, mmap_size - phdr->p_filesz - base_page_offset);
+			explicit_bzero((char*)pa + base_page_offset + phdr->p_filesz, mmap_size - phdr->p_filesz - base_page_offset);
 			// fix perms
 			if (-1 == mprotect(pa, mmap_size, prot)) {
 				err(EXIT_FAILURE, "Failed setting protection: %i", errno);
@@ -380,5 +380,13 @@ int main(int argc, char* argv[]) {
 		#endif
 	}
 
-	return 0;
+	if (-1 == close(progfd)) {
+		err(EXIT_FAILURE, "Problems closing??");
+	}
+
+	// We did it!
+	uint64_t entry = header.e_entry;
+	asm ("jmp *%0" : /* output regs */ : "r" (entry));
+
+	return 0xBABE; // Babe you really shouldn't be returning
 }
