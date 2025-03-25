@@ -1,4 +1,4 @@
-CFLAGS = -static -O2
+CFLAGS = -static
 CC = gcc
 LD = ld
 LDFLAGS = -Telf_x86_64.x

@@ -34,59 +34,10 @@ void prep_regs();
 // ready for a new main function. Format of stack taken from:
 // https://web.archive.org/web/20220126113327/http://www.mindfruit.co.uk/2012/01/initial-stack-reading-process-arguments.html
 __always_inline void grow_and_refurbish_stack(const void* initial_sp) {
-	// The initial stack pointer will also be argc.
-	int argc = *(int*)(initial_sp) - 1; // decrement to prep for new prog
-	char** argv_1 = ((char**)initial_sp + 2); //
-	char** ptr_env = ((char**)initial_sp + argc + 3);
-	// Iterate until we get to the end of the auxiliary vectors
-	// Help from: https://articles.manugarg.com/aboutelfauxiliaryvectors
-	while (*ptr_env != NULL)  ptr_env++;
-	// envvars are referenced via pointer and do not need to be copied
-	Elf64_auxv_t* auxv = (Elf64_auxv_t*)(ptr_env+1);
-	while (auxv->a_type != AT_NULL) auxv++;
-	void* copy_top = auxv + 1;
-	void* copy_bottom = argv_1;
-	uint64_t space_required = (copy_top - copy_bottom) + 8;
-	uint64_t sp;
-
-    // We now have everything we need. Create space on the stack
-	__asm__ (
-		//"push %%rbp;" // TODO: hardcoded to maintain alignment. fixme
-		"sub %1, %%rsp; "
-		"mov %%rsp, %0; "
-		: "=r" (sp)
-		: "r" (space_required)
-	);
-
-	// Copy data over
-	memcpy((void*)(sp + 8), argv_1, space_required - 8);
-	*(uint64_t*)sp = (uint64_t)argc;
-
-	stack_check((void*)sp, argc, argv_1);
-	// checking the stack undoes all our hard setup work >:(
 }
 
 // Prep regs for the control transfer
 __always_inline void prep_regs() {
-	asm (
-		// GPRs
-	    "xor %rax,    %rax;"
-	    "xor %rbx,    %rbx;"
-	    "xor %rcx,    %rcx;"
-	    "xor %rdx,    %rdx;"
-	    "mov (%rsp),  %edi;"
-		//"mov 8(%rsp), %rsi;"
-		"mov %rsp,    %rsi;"
-		"add $8,      %rsi;"
-	    "xor %r8,     %r8; "
-	    "xor %r9,     %r9; "
-	    "xor %r10,    %r10;"
-	    "xor %r11,    %r11;"
-	    "xor %r12,    %r12;"
-	    "xor %r13,    %r13;"
-	    "xor %r14,    %r14;"
-	    "xor %r15,    %r15;"
-	);
 }
 
 void print_shdr(elf_shdr* shdr, elf_hdr* ehdr, int fd) {
@@ -483,10 +434,61 @@ int main(int argc, char* argv[]) {
 	// stack ourselves
 	printf("Prepping to transfer control to loaded program\n");
 
-	grow_and_refurbish_stack(argv - 1);
+	// The initial stack pointer will also be argc.
+	void* initial_sp = argv - 1;
+	int my_argc = *(int*)(initial_sp) - 1; // decrement to prep for new prog
+	char** argv_1 = ((char**)initial_sp + 2); //
+	char** ptr_env = ((char**)initial_sp + my_argc + 3);
+	// Iterate until we get to the end of the auxiliary vectors
+	// Help from: https://articles.manugarg.com/aboutelfauxiliaryvectors
+	while (*ptr_env != NULL)  ptr_env++;
+	// envvars are referenced via pointer and do not need to be copied
+	Elf64_auxv_t* auxv = (Elf64_auxv_t*)(ptr_env+1);
+	while (auxv->a_type != AT_NULL) auxv++;
+	void* copy_top = auxv + 1;
+	void* copy_bottom = argv_1;
+	uint64_t space_required = (copy_top - copy_bottom) + 8;
+	uint64_t sp;
+	char i; // iterator for memcpy
 
-	prep_regs();
-	asm ("jmp *%0" : /* output regs */ : "r" (main_location));
+    // We now have everything we need. Create space on the stack
+	__asm__ (
+		//"push %%rbp;" // TODO: hardcoded to maintain alignment. fixme
+		"sub %1, %%rsp; "
+		"mov %%rsp, %0; "
+		"push 8(%%rbp) "
+		: "=r" (sp)
+		: "r" (space_required)
+	);
+
+	// Copy data over manually because dealing with function call semantics
+	// messing with my bp makes me want to die.
+	for (i = 0; i < space_required - 8; i++) {
+		*((uint8_t*)sp + i) = *((uint8_t*)argv_1 + i);
+	}
+	//memcpy((void*)(sp + 8), argv_1, space_required - 8);
+	*(uint64_t*)sp = (uint64_t)my_argc;
+
+	asm (
+		// GPRs
+	    //"xor %%rax,    %%rax;"
+	    "xor %%rbx,    %%rbx;"
+	    "xor %%rcx,    %%rcx;"
+	    "xor %%rdx,    %%rdx;"
+	    "mov (%%rsp),  %%edi;"
+		"mov %%rsp,    %%rsi;"
+		"add $8,       %%rsi;"
+	    "xor %%r8,     %%r8; "
+	    "xor %%r9,     %%r9; "
+	    "xor %%r10,    %%r10;"
+	    "xor %%r11,    %%r11;"
+	    "xor %%r12,    %%r12;"
+	    "xor %%r13,    %%r13;"
+	    "xor %%r14,    %%r14;"
+	    "xor %%r15,    %%r15;"
+		"jmp *%0;" : /* output regs */ : "r" (main_location)
+	);
+	//prep_regs();
 
 	return 0xBABE; // Babe you really shouldn't be returning
 }
