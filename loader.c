@@ -28,7 +28,7 @@ void print_phdr(elf_phdr* phdr);
 void print_shdr(elf_shdr* shdr, elf_hdr* ehdr, int fd);
 bool parse_elf_header(int fd, elf_header_t* header);
 void stack_check(void* top_of_stack, uint64_t argc, char** argv);
-void zero_regs();
+void prep_regs();
 
 // Grow the stack and 'refurbish' it so that it appears like a fresh new stack
 // ready for a new main function. Format of stack taken from:
@@ -51,6 +51,7 @@ __always_inline void grow_and_refurbish_stack(const void* initial_sp) {
 
     // We now have everything we need. Create space on the stack
 	__asm__ (
+		//"push %%rbp;" // TODO: hardcoded to maintain alignment. fixme
 		"sub %1, %%rsp; "
 		"mov %%rsp, %0; "
 		: "=r" (sp)
@@ -60,26 +61,31 @@ __always_inline void grow_and_refurbish_stack(const void* initial_sp) {
 	// Copy data over
 	memcpy((void*)(sp + 8), argv_1, space_required - 8);
 	*(uint64_t*)sp = (uint64_t)argc;
+
+	stack_check((void*)sp, argc, argv_1);
+	// checking the stack undoes all our hard setup work >:(
 }
 
-// Zero out all regs
-__always_inline void zero_regs() {
+// Prep regs for the control transfer
+__always_inline void prep_regs() {
 	asm (
 		// GPRs
-	    "xor %rax, %rax; "
-	    "xor %rbx, %rbx; "
-	    "xor %rcx, %rcx; "
-	    "xor %rdx, %rdx; "
-	    "xor %rsi, %rsi; "
-	    "xor %rdi, %rdi; "
-	    "xor %r8, %r8; "
-	    "xor %r9, %r9; "
-	    "xor %r10, %r10; "
-	    "xor %r11, %r11; "
-	    "xor %r12, %r12; "
-	    "xor %r13, %r13; "
-	    "xor %r14, %r14; "
-	    "xor %r15, %r15; "
+	    "xor %rax,    %rax;"
+	    "xor %rbx,    %rbx;"
+	    "xor %rcx,    %rcx;"
+	    "xor %rdx,    %rdx;"
+	    "mov (%rsp),  %edi;"
+		//"mov 8(%rsp), %rsi;"
+		"mov %rsp,    %rsi;"
+		"add $8,      %rsi;"
+	    "xor %r8,     %r8; "
+	    "xor %r9,     %r9; "
+	    "xor %r10,    %r10;"
+	    "xor %r11,    %r11;"
+	    "xor %r12,    %r12;"
+	    "xor %r13,    %r13;"
+	    "xor %r14,    %r14;"
+	    "xor %r15,    %r15;"
 	);
 }
 
@@ -265,7 +271,7 @@ void print_elf_header(elf_hdr* header) {
  * argc: Expected number of arguments
  * argv: Expected argument strings
  */
-void stack_check(void* top_of_stack, uint64_t argc, char** argv) {
+__always_inline void stack_check(void* top_of_stack, uint64_t argc, char** argv) {
 	printf("----- stack check -----\n");
 
 	assert(((uint64_t)top_of_stack) % 8 == 0);
@@ -475,9 +481,11 @@ int main(int argc, char* argv[]) {
 	// function which does libc initialization, resets the stack pointer, etc.
 	// We don't want to mangle setup we've already done, so we must set up the
 	// stack ourselves
+	printf("Prepping to transfer control to loaded program\n");
 
 	grow_and_refurbish_stack(argv - 1);
-	zero_regs();
+
+	prep_regs();
 	asm ("jmp *%0" : /* output regs */ : "r" (main_location));
 
 	return 0xBABE; // Babe you really shouldn't be returning

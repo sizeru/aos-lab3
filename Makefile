@@ -1,4 +1,4 @@
-CFLAGS = -static
+CFLAGS = -static -O2
 CC = gcc
 LD = ld
 LDFLAGS = -Telf_x86_64.x
@@ -14,11 +14,16 @@ apager: loader.c
 # sum.o : sum.c
 # 	$(CC) -c $(CFLAGS) -o $@ $<
 
-# sum: sum.o
-# 	$(LD) $< $(LDFLAGS) -o $@
-
 sum: sum.c
-	$(CC) $< $(CFLAGS) -T elf_x86_64.x -e main -o $@
+	$(CC) $< $(CFLAGS) -T elf_x86_64.x -o $@
+
+# # Create a temp static executable. It will be stripped
+# temp-sum: sum.c
+# 	$(CC) $< $(CFLAGS) -T elf_x86_64.x -o $@
+
+# # Get these dumbass dynamicly linked sectioned out of my static exec
+# sum: temp-sum
+# 	objcopy -R.got -R.plt $< $@
 
 clean:
 	$(RM) sum apager

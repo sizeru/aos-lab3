@@ -14,3 +14,11 @@ Program headers create the address space and section headers memory map things i
 A section is a contiguous region of a file.
 
 It seems to me that the program headers are mainly for protection, while sections indicate where the parts of an executable live.
+
+== Terms
+
+Straght from [wikipedia]("https://en.wikipedia.org/wiki/VDSO") on vdso and vvar (vdso variable)
+vDSO (virtual dynamic shared object) is a kernel mechanism for exporting a carefully selected set of kernel space routines to user space applications so that applications can call these kernel space routines in-process, without incurring the performance penalty of a mode switch from user mode to kernel mode that is inherent when calling these same kernel space routines by means of the system call interface.
+
+## Weird stuff
+I noticed there's still a GOT and linkage table in my executable. [Here's the culprit]("https://stackoverflow.com/questions/34850007/why-are-there-global-offset-tables-and-procedure-linkage-tables-in-statically-li")
