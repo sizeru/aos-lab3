@@ -434,6 +434,16 @@ int main(int argc, char* argv[]) {
 	// stack ourselves
 	printf("Prepping to transfer control to loaded program\n");
 
+	/* The stack at the end of this should look like so:
+	auxv
+	0
+	envvars
+	0
+	argv
+	argc
+	retaddr
+	*/
+
 	// The initial stack pointer will also be argc.
 	void* initial_sp = argv - 1;
 	int my_argc = *(int*)(initial_sp) - 1; // decrement to prep for new prog
@@ -447,7 +457,8 @@ int main(int argc, char* argv[]) {
 	while (auxv->a_type != AT_NULL) auxv++;
 	void* copy_top = auxv + 1;
 	void* copy_bottom = argv_1;
-	uint64_t space_required = (copy_top - copy_bottom) + 8;
+	uint64_t space_required = (copy_top - copy_bottom) + 8 /* for argc */;
+	// an additional 8B are subtracted for the return address
 	uint64_t sp;
 	char i; // iterator for memcpy
 
@@ -456,8 +467,9 @@ int main(int argc, char* argv[]) {
 		//"push %%rbp;" // TODO: hardcoded to maintain alignment. fixme
 		"sub %1, %%rsp; "
 		"mov %%rsp, %0; "
-		"push 8(%%rbp) "
-		: "=r" (sp)
+		"push 8(%%rbp) " // for ret addr
+		// 8B of nothing expected here
+		: "=r" (sp) // this is not really SP at this point... the push was after the var assignment
 		: "r" (space_required)
 	);
 
@@ -475,9 +487,9 @@ int main(int argc, char* argv[]) {
 	    "xor %%rbx,    %%rbx;"
 	    "xor %%rcx,    %%rcx;"
 	    "xor %%rdx,    %%rdx;"
-	    "mov (%%rsp),  %%edi;"
-		"mov %%rsp,    %%rsi;"
-		"add $8,       %%rsi;"
+		// "mov (%%rsp),  %%edi;"  handled by args
+		// "mov %%rsp,    %%rsi;"  this + below
+		// "add $8,       %%rsi;"  handled by args
 	    "xor %%r8,     %%r8; "
 	    "xor %%r9,     %%r9; "
 	    "xor %%r10,    %%r10;"
@@ -486,7 +498,9 @@ int main(int argc, char* argv[]) {
 	    "xor %%r13,    %%r13;"
 	    "xor %%r14,    %%r14;"
 	    "xor %%r15,    %%r15;"
-		"jmp *%0;" : /* output regs */ : "r" (main_location)
+		"jmp *%0;"
+		: /* output regs */
+		: "r" (main_location), "D" (my_argc), "S" (argv_1)
 	);
 	//prep_regs();
 

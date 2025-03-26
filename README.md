@@ -22,3 +22,22 @@ vDSO (virtual dynamic shared object) is a kernel mechanism for exporting a caref
 
 ## Weird stuff
 I noticed there's still a GOT and linkage table in my executable. [Here's the culprit]("https://stackoverflow.com/questions/34850007/why-are-there-global-offset-tables-and-procedure-linkage-tables-in-statically-li")
+
+## Support for static linking in static libc?
+https://github.com/lattera/glibc/blob/master/elf/dl-support.c#L228
+
+To get debug info on arch linux for glibc
+https://wiki.archlinux.org/title/Debugging/Getting_traces#Install_debug_packages
+
+## Building glibc with debug symbols
+
+They're not included by default on Arch so I had to do the following:
+- Follow this guide to clone the glibc arch linux repo [this guide]("https://wiki.archlinux.org/title/Arch_build_system")
+- Follow [this guide]("https://wiki.archlinux.org/title/Debugging/Getting_traces#Installing_debug_packages") to add debug symbols to the install
+- Use `makepkg -sr` to build the package. I'm guessing this is gonna take upwards of 30 minutes.
+- Install with pacman -U <packagename.zst> or sumn like that
+
+## Questions I need to answer
+
+1. What is an ifunc? Why is initializing it important?
+2. GLRO - Is this what does the relocation????
