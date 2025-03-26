@@ -3,10 +3,12 @@ CC = gcc
 LD = ld
 LDFLAGS = -Telf_x86_64.x
 #-Ttext-segment=0x800000
-.PHONY: debug
+.PHONY: debug all
 
 debug: CFLAGS += -g3
-debug: apager sum
+debug: all
+
+all: apager sum simple
 
 apager: loader.c
 	$(CC) $(CFLAGS) -o $@ $<
@@ -25,5 +27,8 @@ sum: sum.c
 # sum: temp-sum
 # 	objcopy -R.got -R.plt $< $@
 
+simple: simple.c
+	$(CC) -o $@ $< -static -nostartfiles -nostdlib -g -e _start -T elf_x86_64.x
+
 clean:
-	$(RM) sum apager
+	$(RM) sum apager simple
