@@ -1,8 +1,20 @@
 # A Loader
 This is a simple elf loader.
 
-## Bugs
-This doesn't set up the stack of the function call
+## Usage
+To run the checker program
+```
+make all
+./apager check
+```
+
+You may alternatively see debug output with `make debug`
+
+## Potentail Bugs
+This does not deep copy the auxiliary values, the environment variables,
+or the argv strings. This is not necessary for correctness, as the stack
+is still set up initially, but I am not sure whether one would expect to
+find this array of strings in a particular place.
 
 ## Segmentation
 Object files are are separated into [segments](https://en.wikipedia.org/wiki/Object_file#Segmentation). The name originates from memory segments, which was used before paging. The loader allocates various regions of memory to the program. In days of old this was at the segment granularity. Now, it is more useful to have per-page granularity.

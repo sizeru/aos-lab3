@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <elf.h>
 #define bool unsigned char
 #define uint64_t unsigned long
@@ -11,7 +12,9 @@ void assert(bool result);
 bool stack_check(void* top_of_stack, int argc, char** argv);
 
 int main(int argc, char* argv[]) {
+	puts("This is being printed from the checker program!\n");
 	if (stack_check(argv - 1, argc, argv)) {
+		puts("Stack is working great!\n");
 		return 0;
 	}
 	return -1;

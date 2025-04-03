@@ -8,6 +8,7 @@ LDFLAGS = -Telf_x86_64.x
 debug: CFLAGS += -g3
 debug: all
 
+all: CFLAGS += -DNDEBUG
 all: apager sum simple check
 
 apager: loader.c
@@ -16,6 +17,7 @@ apager: loader.c
 # sum.o : sum.c
 # 	$(CC) -c $(CFLAGS) -o $@ $<
 
+sum: CC = musl-gcc
 sum: sum.c
 	$(CC) $< $(CFLAGS) -T elf_x86_64.x -o $@
 
@@ -27,11 +29,13 @@ sum: sum.c
 # sum: temp-sum
 # 	objcopy -R.got -R.plt $< $@
 
+simple: CC = musl-gcc
 simple: simple.c
 	$(CC) -o $@ $< -static -nostartfiles -nostdlib -g -e _start -T elf_x86_64.x
 
+check: CC = musl-gcc
 check: check.c
-	$(CC) -o $@ $< -static -nostartfiles -nostdlib -g -e _start -T elf_x86_64.x
+	$(CC) -o $@ $< -static -nostartfiles -g -e _start -T elf_x86_64.x
 
 clean:
 	$(RM) sum apager simple check

@@ -472,7 +472,9 @@ int main(int argc, char* argv[]) {
 				if (0 >= read(progfd, symbol_buf, 6)) {
 					err(EXIT_FAILURE, "Couldn't read when searching for main symbol");
 				}
+				#ifndef NDEBUG
 				printf("Symbol: %s\n", symbol_buf);
+				#endif
 				if (strcmp(symbol_buf, "main") == 0) {
 					main_location = (void*)symbols->st_value;
 					break;
@@ -500,7 +502,9 @@ int main(int argc, char* argv[]) {
 	// function which does libc initialization, resets the stack pointer, etc.
 	// We don't want to mangle setup we've already done, so we must set up the
 	// stack ourselves
+	#ifndef NDEBUG
 	printf("Prepping to transfer control to loaded program\n");
+	#endif
 
 	/* The stack at the end of this should look like so:
 	auxv
