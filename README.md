@@ -1,6 +1,9 @@
 # A Loader
 This is a simple elf loader.
 
+## Bugs
+This doesn't set up the stack of the function call
+
 ## Segmentation
 Object files are are separated into [segments](https://en.wikipedia.org/wiki/Object_file#Segmentation). The name originates from memory segments, which was used before paging. The loader allocates various regions of memory to the program. In days of old this was at the segment granularity. Now, it is more useful to have per-page granularity.
 

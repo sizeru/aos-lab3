@@ -29,6 +29,50 @@ void print_shdr(elf_shdr* shdr, elf_hdr* ehdr, int fd);
 bool parse_elf_header(int fd, elf_header_t* header);
 void stack_check(void* top_of_stack, uint64_t argc, char** argv);
 void prep_regs();
+void read_symtab(Elf64_Shdr* shdr, Elf64_Sym** symtab, int elf_fd);
+bool relocate_syms(Elf64_Shdr* shdrs, Elf64_Shdr* rela_shdr, Elf64_Rela* rela, Elf64_Sym* symtab, int elf_fd, uint64_t strtab_offset);
+
+bool relocate_syms(Elf64_Shdr* shdrs, Elf64_Shdr* rela_shdr, Elf64_Rela* rela, Elf64_Sym* symtab, int elf_fd, uint64_t strtab_offset) {
+	if (!symtab) { // might not be ready yet
+		return false;
+	}
+	printf("Relocating\n");
+    for(int i = 0; i < rela_shdr->sh_size / sizeof(Elf64_Rela); i++)
+    {
+        uint64_t sym_name_offset = strtab_offset + symtab[ELF64_R_SYM(rela[i].r_info)].st_name;
+        char sym_name[128] = {0}; // should be enough???
+        if (-1 == lseek(elf_fd, sym_name_offset, SEEK_SET)) {
+			err(EXIT_FAILURE, "Couldn't seek when searching for symbol name for relocation");
+		}
+        unsigned long bytes_read = read(elf_fd, sym_name, sizeof(sym_name));
+        if (bytes_read <= 0) {
+			err(EXIT_FAILURE, "Couldn't read when searching for symbol name for relocation");
+		}
+		printf("[%i] %s needs relocation.\n", i, sym_name);
+
+
+
+        // switch (ELF32_R_TYPE(rel[j].r_info))
+        // {
+        //     case R_386_JMP_SLOT:
+        //     case R_386_GLOB_DAT:
+        //         *(Elf32_Word*)(dst + rel[j].r_offset) = (Elf32_Word)resolve(sym);
+        //         break;
+        // }
+    }
+    return false;
+}
+
+void read_symtab(Elf64_Shdr* shdr, Elf64_Sym** symtab, int elf_fd) {
+	Elf64_Sym* symbols = malloc(shdr->sh_size);
+	*symtab = symbols;
+	if (-1 == lseek(elf_fd, shdr->sh_offset, SEEK_SET)) {
+		err(EXIT_FAILURE, "Couldn't seek when searching for main symbol");
+	}
+	if (shdr->sh_size != read(elf_fd, symbols, shdr->sh_size)) {
+		err(EXIT_FAILURE, "Couldn't read when searching for main symbol");
+	}
+}
 
 // Grow the stack and 'refurbish' it so that it appears like a fresh new stack
 // ready for a new main function. Format of stack taken from:
@@ -382,7 +426,16 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
+	// for finding main
 	void* main_location = NULL;
+	// for finding main & relocating
+	Elf64_Sym* symtab = NULL;
+	// for relocating
+	Elf64_Shdr* rela_shdr = NULL;
+	Elf64_Rela* rela = NULL;
+	uint64_t strtab_offset = -1;
+	bool relocated = false;
+
 	elf_shdr* shdr = section_headers;
 	for (int i = 0; i < header.e_shnum; i++, shdr++) {
 		if (i == SHN_UNDEF || (i > SHN_LORESERVE && i < SHN_HIRESERVE) || (i > SHN_LOPROC && i < SHN_HIPROC) || i == SHN_ABS || i == SHN_COMMON) {
@@ -392,21 +445,27 @@ int main(int argc, char* argv[]) {
 		printf("[%i] ", i);
 		print_shdr(shdr, &header, progfd);
 		#endif
-		// Retrieve the location of main
-		if (shdr->sh_type == SHT_SYMTAB) {
-			Elf64_Sym* symbols = malloc(shdr->sh_size);
-			void* og_symbols = symbols;
+		// Relocations which must be done (with a static exec)
+		if (shdr->sh_type == SHT_RELA) {
+			rela_shdr = shdr;
+			rela = malloc(shdr->sh_size);
 			if (-1 == lseek(progfd, shdr->sh_offset, SEEK_SET)) {
 				err(EXIT_FAILURE, "Couldn't seek when searching for main symbol");
 			}
-			if (shdr->sh_size != read(progfd, symbols, shdr->sh_size)) {
+			if (shdr->sh_size != read(progfd, rela, shdr->sh_size)) {
 				err(EXIT_FAILURE, "Couldn't read when searching for main symbol");
 			}
-			const uint64_t symbol_names_offset = section_headers[shdr->sh_link].sh_offset;
+			relocated = relocate_syms(section_headers, rela_shdr, rela, symtab, progfd, strtab_offset);
+		}
+		// Retrieve the location of main
+		if (shdr->sh_type == SHT_SYMTAB) {
+			read_symtab(shdr, &symtab, progfd);
+			Elf64_Sym* symbols = symtab;
+			strtab_offset = section_headers[shdr->sh_link].sh_offset;
 			char symbol_buf[6] = {0}; // can be small. i only care about main
 			bool found = false;
 			for (int i = 0; i < shdr->sh_size / sizeof(Elf64_Sym); i++, symbols++) {
-				uint64_t loc = symbol_names_offset + symbols->st_name;
+				uint64_t loc = strtab_offset + symbols->st_name;
 				if (-1 == lseek(progfd, loc, SEEK_SET)) {
 					err(EXIT_FAILURE, "Couldn't seek when searching for main symbol");
 				}
@@ -419,10 +478,19 @@ int main(int argc, char* argv[]) {
 					break;
 				}
 			}
-			free(og_symbols);
 		}
 	}
+	if (rela && !relocated) {
+		if (relocate_syms(section_headers, rela_shdr, rela, symtab, progfd, strtab_offset)) {
+			relocated = true;
+		} else {
+			err(EXIT_FAILURE, "Could not relocate, no symbol table was found");
+		}
+	}
+
 	assert(main_location);
+
+	// Relocate all necessary symbols
 
 	if (-1 == close(progfd)) {
 		err(EXIT_FAILURE, "Problems closing??");
@@ -444,6 +512,11 @@ int main(int argc, char* argv[]) {
 	retaddr
 	*/
 
+	// Here we begin copying over everything. Our main goal is to copy over
+	// everything from argv+1 to the top of the auxiliary vectors. We also leave
+	// 8 extra bytes of space for argc. After, we set argc and change the
+	// pointers for everything.
+
 	// The initial stack pointer will also be argc.
 	void* initial_sp = argv - 1;
 	int my_argc = *(int*)(initial_sp) - 1; // decrement to prep for new prog
@@ -458,28 +531,45 @@ int main(int argc, char* argv[]) {
 	void* copy_top = auxv + 1;
 	void* copy_bottom = argv_1;
 	uint64_t space_required = (copy_top - copy_bottom) + 8 /* for argc */;
+	uintptr_t offset;
 	// an additional 8B are subtracted for the return address
-	uint64_t sp;
+	uintptr_t sp;
 	char i; // iterator for memcpy
 
     // We now have everything we need. Create space on the stack
 	__asm__ (
 		//"push %%rbp;" // TODO: hardcoded to maintain alignment. fixme
-		"sub %1, %%rsp; "
-		"mov %%rsp, %0; "
-		"push 8(%%rbp) " // for ret addr
+		"sub %1, %%rsp;"
+		"mov %%rsp, %0;"
+		"push 8(%%rbp);" // for ret addr
 		// 8B of nothing expected here
 		: "=r" (sp) // this is not really SP at this point... the push was after the var assignment
 		: "r" (space_required)
 	);
 
 	// Copy data over manually because dealing with function call semantics
-	// messing with my bp makes me want to die.
+	// messing with my bp makes me want to die. (a memcpy would reset our well
+	// crafted rbp)
 	for (i = 0; i < space_required - 8; i++) {
-		*((uint8_t*)sp + i) = *((uint8_t*)argv_1 + i);
+		*((uint8_t*)sp + i + 8) = *((uint8_t*)argv_1 + i);
 	}
-	//memcpy((void*)(sp + 8), argv_1, space_required - 8);
-	*(uint64_t*)sp = (uint64_t)my_argc;
+
+	// Set all values and edit all pointers. Remember that
+	*(uint64_t*)sp = (uint64_t)my_argc; // set argc
+	// offset = (uintptr_t)(argv) - (sp + 8);
+	// iterate and update all argv pointers
+	// i = 0;
+	// while (*(argv_1 + i) != NULL) {
+	// 	*((uintptr_t*)sp + (i + 1)) -= offset;
+	// 	i += 1;
+	// }
+
+	// iterate and update all environment variable pointers
+	// i += 1;
+	// while (*(argv_1 + i) != NULL) {
+	// 	*((uintptr_t*)sp + (i + 1)) -= offset;
+	// 	i += 1;
+	// }
 
 	asm (
 		// GPRs
@@ -500,7 +590,7 @@ int main(int argc, char* argv[]) {
 	    "xor %%r15,    %%r15;"
 		"jmp *%0;"
 		: /* output regs */
-		: "r" (main_location), "D" (my_argc), "S" (argv_1)
+		: "r" (main_location), "D" (my_argc), "S" (sp+8)
 	);
 	//prep_regs();
 
