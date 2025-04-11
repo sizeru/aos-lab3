@@ -2,7 +2,7 @@ CFLAGS = -static
 CC = gcc
 LD = ld
 LDFLAGS = -Telf_x86_64.x
-TARGETS = apager sum simple check
+TARGETS = apager sum simplesum check hello mymalloc.so malloc_test
 #-Ttext-segment=0x800000
 .PHONY: debug all check-gcc run_malloc_test
 
@@ -30,15 +30,18 @@ sum: sum.c
 # sum: temp-sum
 # 	objcopy -R.got -R.plt $< $@
 
-simple: simple.c
+simplesum: simplesum.c
 	$(CC) -o $@ $< -static -nostartfiles -nostdlib -g -e _start -T elf_x86_64.x
 
 check: CC = musl-gcc
 check: check.c
-	$(CC) -o $@ $< $(CFLAGS) -nostartfiles -g -e _start -T elf_x86_64.x
+	$(CC) -o $@ $< $(CFLAGS) -g -T elf_x86_64.x
 
 clean:
-	$(RM) sum apager simple check mymalloc.so malloc_test
+	$(RM) sum apager simplesum check mymalloc.so malloc_test hello
+
+hello: hello.c
+	$(CC) -o $@ $<
 
 mymalloc.so: mymalloc.c
 	$(CC) -shared -fPIC -o $@ $<

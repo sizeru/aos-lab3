@@ -7,13 +7,13 @@ int do_sum(int a, int b) {
 
 int main(int argc, char* argv[]) {
 	const char* greeting = "We're in the child!";
-	int i = do_sum(1, 3);
-	int j = do_sum(5, 2);
-	//printf(greeting);
-	puts(greeting);
+	if (argc < 3) {
+		return -1;
+	}
 	int a = atoi(argv[1]);
 	int b = atoi(argv[2]);
-	int x = a + b + i + j;
+	int x = a + b;
+	printf("sum is: %i\n", x);
 	//printf("%d + %d = %d\n", a, b, x);
 	return x;
 	// return 0;

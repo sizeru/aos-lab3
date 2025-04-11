@@ -451,7 +451,7 @@ int main(int argc, char* argv[]) {
 		if (relocate_syms(section_headers, rela_shdr, rela, symtab, elf_file, strtab_offset)) {
 			relocated = true;
 		} else {
-			err(EXIT_FAILURE, "Could not relocate, no symbol table was found");
+			fprintf(stderr, "WARNING: Could not relocate using symbol table lookups. Dangerous to continue\n");
 		}
 	}
 

@@ -18,9 +18,11 @@ void *malloc(size_t size)
 {
     if(real_malloc==NULL) find_real_malloc();
 
+    fprintf(stderr, "malloc(%lu)", size);
     char *p = real_malloc(size);
     for (long i = 0; i < size; i++) {
     	p[i] = MAGIC;
     }
+    fprintf(stderr, ": %p\n", p);
     return p;
 }

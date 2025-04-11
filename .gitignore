@@ -1,5 +1,8 @@
 .gdb_history
 apager
 sum
-simple
+simplesum
 check
+mymalloc.so
+malloc_test
+hello

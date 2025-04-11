@@ -7,7 +7,7 @@
 #define false 0
 
 void leave(int code);
-void _start();
+// void _start();
 int main(int argc, char* argv[]);
 void assert(bool result);
 bool stack_check(void* top_of_stack, int argc, char** argv);
@@ -86,23 +86,23 @@ void leave (int code) {
 	);
 }
 
-void _start() {
-	/* The stack as of right now */
-	// sp + 32: argv
-	// sp + 24: argc
-	// sp + 16: Return address (saved ebp)
-	char** argv; // sp + 8
-							 // sp + 4 padding
-	int argc; // sp
+// void _start() {
+// 	/* The stack as of right now */
+// 	// sp + 32: argv
+// 	// sp + 24: argc
+// 	// sp + 16: Return address (saved ebp)
+// 	char** argv; // sp + 8
+// 							 // sp + 4 padding
+// 	int argc; // sp
 
 
-	// Retrieve stack from kernel
-	asm (
-			"mov 24(%%rsp), %0;"
-			"mov %%rsp, %1;"
-			"add $32, %1;"
-			: "=r" (argc), "=r" (argv)
-	);
+// 	// Retrieve stack from kernel
+// 	asm (
+// 			"mov 24(%%rsp), %0;"
+// 			"mov %%rsp, %1;"
+// 			"add $32, %1;"
+// 			: "=r" (argc), "=r" (argv)
+// 	);
 
-	leave(main(argc, argv));
-}
+// 	leave(main(argc, argv));
+// }
