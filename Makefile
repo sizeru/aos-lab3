@@ -4,7 +4,7 @@ LD = ld
 LDFLAGS = -Telf_x86_64.x
 TARGETS = apager sum simple check
 #-Ttext-segment=0x800000
-.PHONY: debug all check-gcc
+.PHONY: debug all check-gcc run_malloc_test
 
 debug: CFLAGS += -g3
 debug: $(TARGETS)
@@ -39,3 +39,12 @@ check: check.c
 
 clean:
 	$(RM) sum apager simple check
+
+mymalloc.so: mymalloc.c
+	$(CC) -shared -fPIC -o $@ $<
+
+malloc_test: malloc_test.c
+	$(CC) $< -o $@
+
+run_malloc_test: malloc_test mymalloc.so
+	LD_PRELOAD=./mymalloc.so ./malloc_test
