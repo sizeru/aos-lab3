@@ -4,11 +4,20 @@ This is a simple elf loader.
 ## Usage
 To run the checker program
 ```
-make all
-./apager check
+make all && ./apager check
 ```
 
-You may alternatively see debug output with `make debug`
+To see debug output
+```
+make debug && ./apager check
+```
+
+To attempt dynamic loading glibc
+```
+make apager
+make check-gcc
+```
+
 
 ## Potentail Bugs
 This does not deep copy the auxiliary values, the environment variables,

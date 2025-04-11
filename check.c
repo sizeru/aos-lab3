@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <stdio.h>
 #include <elf.h>
 #define bool unsigned char
@@ -15,6 +16,11 @@ int main(int argc, char* argv[]) {
 	puts("This is being printed from the checker program!\n");
 	if (stack_check(argv - 1, argc, argv)) {
 		puts("Stack is working great!\n");
+
+		char* msg = malloc(50);
+		msg = "Malloc is working\n";
+		puts(msg);
+
 		return 0;
 	}
 	return -1;

@@ -1,4 +1,4 @@
-#include <assert.h> /* assert */
+#include <assert.h>
 #include <elf.h> /* e_type */
 #include <errno.h> /* errno */
 #include <err.h> /* err */
@@ -10,6 +10,7 @@
 #include <string.h> /* strcmp */
 #include <sys/cdefs.h>
 #include <sys/mman.h> /* mmap */
+#include <sys/stat.h>
 #include <unistd.h> /* read */
 
 #define PAGESIZE 0x1000
@@ -27,12 +28,11 @@ void print_usage(const char* program);
 void print_phdr(elf_phdr* phdr);
 void print_shdr(elf_shdr* shdr, elf_hdr* ehdr, int fd);
 bool parse_elf_header(int fd, elf_header_t* header);
-void stack_check(void* top_of_stack, uint64_t argc, char** argv);
 void prep_regs();
 void read_symtab(Elf64_Shdr* shdr, Elf64_Sym** symtab, int elf_fd);
-bool relocate_syms(Elf64_Shdr* shdrs, Elf64_Shdr* rela_shdr, Elf64_Rela* rela, Elf64_Sym* symtab, int elf_fd, uint64_t strtab_offset);
+bool relocate_syms(Elf64_Shdr* shdrs, Elf64_Shdr* rela_shdr, Elf64_Rela* rela, Elf64_Sym* symtab, void* elf_fd, uint64_t strtab_offset);
 
-bool relocate_syms(Elf64_Shdr* shdrs, Elf64_Shdr* rela_shdr, Elf64_Rela* rela, Elf64_Sym* symtab, int elf_fd, uint64_t strtab_offset) {
+bool relocate_syms(Elf64_Shdr* shdrs, Elf64_Shdr* rela_shdr, Elf64_Rela* rela, Elf64_Sym* symtab, void* elf_file, uint64_t strtab_offset) {
 	if (!symtab) { // might not be ready yet
 		return false;
 	}
@@ -40,17 +40,8 @@ bool relocate_syms(Elf64_Shdr* shdrs, Elf64_Shdr* rela_shdr, Elf64_Rela* rela, E
     for(int i = 0; i < rela_shdr->sh_size / sizeof(Elf64_Rela); i++)
     {
         uint64_t sym_name_offset = strtab_offset + symtab[ELF64_R_SYM(rela[i].r_info)].st_name;
-        char sym_name[128] = {0}; // should be enough???
-        if (-1 == lseek(elf_fd, sym_name_offset, SEEK_SET)) {
-			err(EXIT_FAILURE, "Couldn't seek when searching for symbol name for relocation");
-		}
-        unsigned long bytes_read = read(elf_fd, sym_name, sizeof(sym_name));
-        if (bytes_read <= 0) {
-			err(EXIT_FAILURE, "Couldn't read when searching for symbol name for relocation");
-		}
+        char *sym_name = (char*)elf_file + sym_name_offset;
 		printf("[%i] %s needs relocation.\n", i, sym_name);
-
-
 
         // switch (ELF32_R_TYPE(rel[j].r_info))
         // {
@@ -260,46 +251,6 @@ void print_elf_header(elf_hdr* header) {
     printf("\n");
 }
 
-/**
- * Checking stack made for child program.
- * top_of_stack: stack pointer that will given to child program as %rsp
- * argc: Expected number of arguments
- * argv: Expected argument strings
- */
-__always_inline void stack_check(void* top_of_stack, uint64_t argc, char** argv) {
-	printf("----- stack check -----\n");
-
-	assert(((uint64_t)top_of_stack) % 8 == 0);
-	printf("top of stack is 8-byte aligned\n");
-
-	uint64_t* stack = top_of_stack;
-	uint64_t actual_argc = *(stack++);
-	printf("argc: %lu\n", actual_argc);
-	assert(actual_argc == argc);
-
-	for (int i = 0; i < argc; i++) {
-		char* argp = (char*)*(stack++);
-		assert(strcmp(argp, argv[i]) == 0);
-		printf("arg %d: %s\n", i, argp);
-	}
-	// Argument list ends with null pointer
-	assert(*(stack++) == 0);
-
-	int envp_count = 0;
-	while (*(stack++) != 0)
-		envp_count++;
-
-	printf("env count: %d\n", envp_count);
-
-	Elf64_auxv_t* auxv_start = (Elf64_auxv_t*)stack;
-	Elf64_auxv_t* auxv_null = auxv_start;
-	while (auxv_null->a_type != AT_NULL) {
-		auxv_null++;
-	}
-	printf("aux count: %lu\n", auxv_null - auxv_start);
-	printf("----- end stack check -----\n");
-}
-
 // Returns if two buffers differ
 bool bufdiff(const void* buf1, const void* buf2, int len) {
 	const char *b1 = buf1, *b2 = buf2;
@@ -354,12 +305,28 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
+	char* loader_exec = argv[0];
+	for (char* it = argv[0]; *it != 0; it++) {
+		if (*it == '/') loader_exec = it + 1;
+	}
+
+	char* loaded_exec = argv[1];
+	for (char* it = argv[1]; *it != 0; it++) {
+		if (*it == '/') loaded_exec = it + 1;
+	}
+
+	if (strcmp(loader_exec, loaded_exec) == 0) {
+		printf("You cannot call %s on %s\n", argv[0], argv[1]);
+		return -1;
+	}
+
 	// Open
 	const char* progname = argv[1];
 	int progfd = open(progname, O_RDONLY, 0);
 	if (-1 == progfd) {
 		err(errno, NULL);
 	}
+
 
 	// Read header
 	elf_header_t header;
@@ -426,16 +393,25 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
+	// Load file into memory
+	struct stat stat;
+	if (-1 == fstat(progfd, &stat)) {
+		err(EXIT_FAILURE, "Failed to read info about file");
+	}
+	uint64_t filesize = stat.st_size;
+	void* elf_file = mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, progfd, 0);
+
 	// for finding main
 	void* main_location = NULL;
 	// for finding main & relocating
 	Elf64_Sym* symtab = NULL;
-	// for relocating
+	// for relocatinggg
 	Elf64_Shdr* rela_shdr = NULL;
 	Elf64_Rela* rela = NULL;
 	uint64_t strtab_offset = -1;
 	bool relocated = false;
 
+	// Parse the section headers
 	elf_shdr* shdr = section_headers;
 	for (int i = 0; i < header.e_shnum; i++, shdr++) {
 		if (i == SHN_UNDEF || (i > SHN_LORESERVE && i < SHN_HIRESERVE) || (i > SHN_LOPROC && i < SHN_HIPROC) || i == SHN_ABS || i == SHN_COMMON) {
@@ -448,34 +424,23 @@ int main(int argc, char* argv[]) {
 		// Relocations which must be done (with a static exec)
 		if (shdr->sh_type == SHT_RELA) {
 			rela_shdr = shdr;
-			rela = malloc(shdr->sh_size);
-			if (-1 == lseek(progfd, shdr->sh_offset, SEEK_SET)) {
-				err(EXIT_FAILURE, "Couldn't seek when searching for main symbol");
-			}
-			if (shdr->sh_size != read(progfd, rela, shdr->sh_size)) {
-				err(EXIT_FAILURE, "Couldn't read when searching for main symbol");
-			}
-			relocated = relocate_syms(section_headers, rela_shdr, rela, symtab, progfd, strtab_offset);
+			rela = (Elf64_Rela*)((uintptr_t)elf_file + shdr->sh_offset);
+			relocated = relocate_syms(section_headers, rela_shdr, rela, symtab, elf_file, strtab_offset);
 		}
 		// Retrieve the location of main
 		if (shdr->sh_type == SHT_SYMTAB) {
 			read_symtab(shdr, &symtab, progfd);
 			Elf64_Sym* symbols = symtab;
 			strtab_offset = section_headers[shdr->sh_link].sh_offset;
-			char symbol_buf[6] = {0}; // can be small. i only care about main
+			char* symbol_name = NULL;
 			bool found = false;
 			for (int i = 0; i < shdr->sh_size / sizeof(Elf64_Sym); i++, symbols++) {
 				uint64_t loc = strtab_offset + symbols->st_name;
-				if (-1 == lseek(progfd, loc, SEEK_SET)) {
-					err(EXIT_FAILURE, "Couldn't seek when searching for main symbol");
-				}
-				if (0 >= read(progfd, symbol_buf, 6)) {
-					err(EXIT_FAILURE, "Couldn't read when searching for main symbol");
-				}
+				symbol_name = (char*)elf_file + loc;
 				#ifndef NDEBUG
-				printf("Symbol: %s\n", symbol_buf);
+				printf("Symbol: %s\n", symbol_name);
 				#endif
-				if (strcmp(symbol_buf, "main") == 0) {
+				if (strcmp(symbol_name, "main") == 0) {
 					main_location = (void*)symbols->st_value;
 					break;
 				}
@@ -483,7 +448,7 @@ int main(int argc, char* argv[]) {
 		}
 	}
 	if (rela && !relocated) {
-		if (relocate_syms(section_headers, rela_shdr, rela, symtab, progfd, strtab_offset)) {
+		if (relocate_syms(section_headers, rela_shdr, rela, symtab, elf_file, strtab_offset)) {
 			relocated = true;
 		} else {
 			err(EXIT_FAILURE, "Could not relocate, no symbol table was found");
