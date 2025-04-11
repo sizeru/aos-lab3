@@ -38,7 +38,7 @@ check: check.c
 	$(CC) -o $@ $< $(CFLAGS) -nostartfiles -g -e _start -T elf_x86_64.x
 
 clean:
-	$(RM) sum apager simple check
+	$(RM) sum apager simple check mymalloc.so malloc_test
 
 mymalloc.so: mymalloc.c
 	$(CC) -shared -fPIC -o $@ $<
